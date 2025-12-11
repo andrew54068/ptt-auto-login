@@ -7,7 +7,7 @@ class PTTAutoLogin {
     this.preventSubmit = false; // Set to false to actually submit (press Enter)
     this.eventType = 'keypress'; // Options: 'keydown', 'keypress', or 'all'
     this.useBulkInput = true; // Try to paste all at once (faster)
-    this.typingDelay = 20; // Milliseconds between characters (if bulk fails)
+    this.useBulkInput = true; // Try to paste all at once (faster)
   }
 
   async init() {
@@ -79,7 +79,12 @@ class PTTAutoLogin {
               console.log('%c[PTT Auto-Login] Username input completed, waiting for password prompt...', 'color: orange');
 
               // After username, wait for password prompt
-              setTimeout(() => {
+              // Use polling instead of fixed delay to be faster
+              let pwdAttempts = 0;
+              const pwdMaxAttempts = 40; // 2 seconds total (40 * 50ms)
+
+              const checkPasswordPrompt = setInterval(() => {
+                pwdAttempts++;
                 // Check if password prompt appeared
                 const currentText = document.body.innerText || document.body.textContent;
 
@@ -89,6 +94,7 @@ class PTTAutoLogin {
                   currentText.includes('Please enter your password') ||
                   (currentText.includes('密碼') && currentText.includes(':'))) {
 
+                  clearInterval(checkPasswordPrompt);
                   console.log('%c[PTT Auto-Login] Password prompt detected', 'color: green; font-weight: bold');
                   console.log('%c[PTT Auto-Login] Password length:', 'color: blue', credentials.password.length);
 
@@ -103,14 +109,14 @@ class PTTAutoLogin {
                       // Handle "Welcome Back" / Bridge Page
                       // Use polling to wait for the bridge page to appear (network/rendering delay)
                       let attempts = 0;
-                      const maxAttempts = 20; // Try for 10 seconds (20 * 500ms)
+                      const maxAttempts = 200; // Try for 10 seconds (200 * 50ms)
 
                       const checkBridgePage = setInterval(() => {
                         attempts++;
                         const postLoginText = document.body.innerText || document.body.textContent;
 
                         // Debug log to see what we are looking at
-                        if (this.debugMode && attempts % 2 === 0) {
+                        if (this.debugMode && attempts % 10 === 0) {
                           console.log(`%c[PTT Auto-Login] Checking for bridge page (Attempt ${attempts}/${maxAttempts})...`, 'color: gray');
                         }
 
@@ -133,26 +139,26 @@ class PTTAutoLogin {
                           console.log('%c[PTT Auto-Login] Bridge page check timed out', 'color: gray');
                           clearInterval(checkBridgePage);
                         }
-                      }, 500);
+                      }, 50);
                     }
                   });
                 }
                 // Only if Password prompt is NOT found, check if we are stuck at ID prompt
                 else if (currentText.includes('請輸入代號') || currentText.includes('Please enter ID')) {
-                  console.log('%c[PTT Auto-Login] ⚠️ Still at ID prompt/screen (and no password prompt detected). Avoiding password entry.', 'color: red; font-weight: bold');
-                  // OPTIONAL: We could try pressing Enter again here if we wanted to be persistent, 
-                  // but for now, we'll just log it.
-                  return;
+                  // Only warn occasionally or on timeout to avoid spam
+                  if (pwdAttempts >= pwdMaxAttempts) {
+                    console.log('%c[PTT Auto-Login] ⚠️ Still at ID prompt/screen (and no password prompt detected). Avoiding password entry.', 'color: red; font-weight: bold');
+                    clearInterval(checkPasswordPrompt);
+                  }
                 }
-                else {
-                  // Fallback: Check for loose password match if strict failed but we are DEFINITELY not on ID screen?
-                  // No, safer to be strict.
-                  console.log('%c[PTT Auto-Login] ⚠️ Password prompt NOT detected', 'color: red');
+                else if (pwdAttempts >= pwdMaxAttempts) {
+                  console.log('%c[PTT Auto-Login] ⚠️ Password prompt NOT detected (Timed out)', 'color: red');
                   console.log('Current page text:', currentText.substring(0, 500));
+                  clearInterval(checkPasswordPrompt);
                 }
-              }, 1000); // Slight increase to ensure screen update
+              }, 50);
             });
-          }, 300);
+          }, 100);
 
           return true;
         }
@@ -240,95 +246,68 @@ class PTTAutoLogin {
   }
 
   typeInTerminal(container, text, fieldType, callback) {
-    // Type each character with a small delay to simulate real typing
-    let index = 0;
+    // Type characters synchronously for maximum speed
     const displayText = fieldType === 'password' ? '*'.repeat(text.length) : text;
-    const eventsSent = []; // Track all events sent
     let callbackExecuted = false; // Prevent double callback
 
     if (this.debugMode) {
-      console.log(`%c[PTT Auto-Login] Starting to type ${fieldType}:`, 'color: cyan', displayText);
-      console.log(`%c[PTT Auto-Login] Text length: ${text.length} characters`, 'color: cyan');
+      console.log(`%c[PTT Auto-Login] Starting to type ${fieldType} (Sync Mode):`, 'color: cyan', displayText);
     }
 
-    const typeNextChar = () => {
-      if (index < text.length) {
-        const char = text[index];
+    // Send all character events synchronously
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      if (this.debugMode) {
         const displayChar = fieldType === 'password' ? '*' : char;
-
-        if (this.debugMode) {
-          console.log(`  [${index + 1}/${text.length}] Typing: "${displayChar}" (charCode: ${char.charCodeAt(0)}) at index ${index}`);
-        }
-
-        // Track this event
-        eventsSent.push({ index, char, type: this.eventType });
-
-        // Simulate keyboard events for this character
-        switch (this.eventType) {
-          case 'keydown':
-            // Only send keydown (cleanest, most terminals use this)
-            this.sendKeyEvent(container, 'keydown', char);
-            break;
-          case 'keypress':
-            // Only send keypress
-            this.sendKeyEvent(container, 'keypress', char);
-            break;
-          case 'all':
-            // Send all three event types
-            this.sendKeyEvent(container, 'keydown', char);
-            this.sendKeyEvent(container, 'keypress', char);
-            this.sendKeyEvent(container, 'keyup', char);
-            break;
-        }
-
-        index++;
-        setTimeout(typeNextChar, this.typingDelay); // Configurable delay
-      } else {
-        // All characters typed
-        if (this.debugMode) {
-          console.log(`%c[PTT Auto-Login] ✓ Finished typing ${fieldType}`, 'color: green');
-          console.log(`%c[PTT Auto-Login] Total events sent: ${eventsSent.length}`, 'color: green');
-          console.log(`%c[PTT Auto-Login] Expected length: ${text.length}`, 'color: green');
-
-          if (eventsSent.length !== text.length) {
-            console.log(`%c[PTT Auto-Login] ⚠️ WARNING: Event count mismatch!`, 'color: red; font-weight: bold');
-          }
-        }
-
-        // After typing all characters, press Enter (unless prevented)
-        setTimeout(() => {
-          if (!this.preventSubmit) {
-            if (this.debugMode) {
-              console.log(`%c[PTT Auto-Login] Pressing Enter for ${fieldType}`, 'color: yellow');
-            }
-
-            // FORCE FULL ENTER SEQUENCE: keydown -> keypress -> keyup
-            // This is the most robust way to ensure the terminal picks it up.
-            this.sendKeyEvent(container, 'keydown', 'Enter');
-            this.sendKeyEvent(container, 'keypress', 'Enter');
-            this.sendKeyEvent(container, 'keyup', 'Enter');
-
-          } else {
-            if (this.debugMode) {
-              console.log(`%c[PTT Auto-Login] ⏸️  Skipping Enter press for ${fieldType} (preventSubmit = true)`, 'color: orange');
-            }
-          }
-
-          if (callback && !callbackExecuted) {
-            callbackExecuted = true;
-            if (this.debugMode) {
-              console.log(`%c[PTT Auto-Login] Executing callback for ${fieldType}`, 'color: magenta');
-            }
-            setTimeout(callback, 100);
-          } else if (callbackExecuted) {
-            console.log(`%c[PTT Auto-Login] ⚠️ Callback already executed for ${fieldType}, skipping!`, 'color: red; font-weight: bold');
-          }
-        }, 200); // Increased delay before Enter
+        console.log(`  [${i + 1}/${text.length}] Typing: "${displayChar}" (charCode: ${char.charCodeAt(0)})`);
       }
-    };
 
-    typeNextChar();
+      // Simulate keyboard events for this character
+      switch (this.eventType) {
+        case 'keydown':
+          this.sendKeyEvent(container, 'keydown', char);
+          break;
+        case 'keypress':
+          this.sendKeyEvent(container, 'keypress', char);
+          break;
+        case 'all':
+          this.sendKeyEvent(container, 'keydown', char);
+          this.sendKeyEvent(container, 'keypress', char);
+          this.sendKeyEvent(container, 'keyup', char);
+          break;
+      }
+    }
+
+    if (this.debugMode) {
+      console.log(`%c[PTT Auto-Login] ✓ Finished typing ${fieldType}`, 'color: green');
+    }
+
+    // Schedule Enter press immediately after
+    setTimeout(() => {
+      if (!this.preventSubmit) {
+        if (this.debugMode) {
+          console.log(`%c[PTT Auto-Login] Pressing Enter for ${fieldType}`, 'color: yellow');
+        }
+        this.sendKeyEvent(container, 'keydown', 'Enter');
+        this.sendKeyEvent(container, 'keypress', 'Enter');
+        this.sendKeyEvent(container, 'keyup', 'Enter');
+      } else {
+        if (this.debugMode) {
+          console.log(`%c[PTT Auto-Login] ⏸️  Skipping Enter press for ${fieldType} (preventSubmit = true)`, 'color: orange');
+        }
+      }
+
+      if (callback && !callbackExecuted) {
+        callbackExecuted = true;
+        if (this.debugMode) {
+          console.log(`%c[PTT Auto-Login] Executing callback for ${fieldType}`, 'color: magenta');
+        }
+        setTimeout(callback, 10);
+      }
+    }, 0);
   }
+
 
   sendKeyEvent(element, eventType, key) {
     const isEnter = key === 'Enter';

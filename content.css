@@ -1,0 +1,32 @@
+/* PTT Image Preview Panel Styles */
+
+#ptt-image-preview-panel {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  line-height: 1.5;
+}
+
+#ptt-image-preview-panel img {
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+#ptt-image-preview-panel div {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Add a subtle indicator for links with images */
+a[href][data-preview-attached] {
+  position: relative;
+}
+
+a[href][data-preview-attached]:hover {
+  text-decoration: underline;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

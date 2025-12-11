@@ -99,6 +99,41 @@ class PTTAutoLogin {
                       console.log('%c[PTT Auto-Login] ⚠️ SUBMIT PREVENTED (preventSubmit = true)', 'color: red; font-weight: bold; font-size: 14px');
                     } else {
                       console.log('%c[PTT Auto-Login] ✓ Login submitted', 'color: green; font-weight: bold');
+
+                      // Handle "Welcome Back" / Bridge Page
+                      // Use polling to wait for the bridge page to appear (network/rendering delay)
+                      let attempts = 0;
+                      const maxAttempts = 20; // Try for 10 seconds (20 * 500ms)
+
+                      const checkBridgePage = setInterval(() => {
+                        attempts++;
+                        const postLoginText = document.body.innerText || document.body.textContent;
+
+                        // Debug log to see what we are looking at
+                        if (this.debugMode && attempts % 2 === 0) {
+                          console.log(`%c[PTT Auto-Login] Checking for bridge page (Attempt ${attempts}/${maxAttempts})...`, 'color: gray');
+                        }
+
+                        // Check for bridge page indicators
+                        if (postLoginText.includes('歡迎您再度拜訪') ||
+                          postLoginText.includes('請按任意鍵繼續') ||
+                          postLoginText.includes('Press any key to continue')) {
+
+                          console.log('%c[PTT Auto-Login] Bridge/Welcome page detected!', 'color: green; font-weight: bold');
+                          console.log('%c[PTT Auto-Login] Skipping bridge page...', 'color: orange');
+
+                          clearInterval(checkBridgePage);
+
+                          // Press Enter to skip
+                          this.sendKeyEvent(terminalContainer, 'keydown', 'Enter');
+                          this.sendKeyEvent(terminalContainer, 'keypress', 'Enter');
+                          this.sendKeyEvent(terminalContainer, 'keyup', 'Enter');
+
+                        } else if (attempts >= maxAttempts) {
+                          console.log('%c[PTT Auto-Login] Bridge page check timed out', 'color: gray');
+                          clearInterval(checkBridgePage);
+                        }
+                      }, 500);
                     }
                   });
                 }
